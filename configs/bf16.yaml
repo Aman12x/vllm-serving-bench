@@ -1,0 +1,3 @@
+label: bf16
+expect_model: Qwen/Qwen2.5-7B-Instruct
+note: "server started WITHOUT --quantization (16-bit weights)"

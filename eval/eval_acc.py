@@ -10,7 +10,7 @@ Compare two finished runs (paired McNemar test on the same questions):
 import argparse, asyncio, json, math, random, re, time
 from pathlib import Path
 
-OUT = Path("/content/drive/MyDrive/vllm-bench")
+OUT = Path(__file__).resolve().parents[1] / "results/raw"   # override with --out-dir
 PROMPT = "\n\nSolve step by step. End with a final line: Answer: <number>"
 NUM = r"-?\d[\d,]*\.?\d*"
 
@@ -89,17 +89,23 @@ async def run(args):
           f"unparsed={res['unparsed']}  ({res['seconds']}s) -> {path}")
 
 
-def compare(a, b):
-    from statsmodels.stats.contingency_tables import mcnemar
+def mcnemar_exact_p(b, c):
+    """Two-sided exact McNemar: binomial test on the discordant pairs at p=0.5."""
+    n = b + c
+    if n == 0:
+        return 1.0
+    obs = min(b, c)
+    tail = sum(math.comb(n, k) for k in range(0, obs + 1)) / 2 ** n
+    return min(1.0, 2 * tail)
 
+
+def compare(a, b):
     A = {r["id"]: r["correct"] for r in json.loads((OUT / f"acc_{a}.json").read_text())["rows"]}
     B = {r["id"]: r["correct"] for r in json.loads((OUT / f"acc_{b}.json").read_text())["rows"]}
     ids = sorted(A.keys() & B.keys())
     only_a = sum(A[i] and not B[i] for i in ids)
     only_b = sum(B[i] and not A[i] for i in ids)
-    both = sum(A[i] and B[i] for i in ids)
-    neither = len(ids) - both - only_a - only_b
-    p = mcnemar([[both, only_a], [only_b, neither]], exact=True).pvalue
+    p = mcnemar_exact_p(only_a, only_b)
     print(f"{a} vs {b} on {len(ids)} shared questions: only {a} right={only_a}, "
           f"only {b} right={only_b}, McNemar exact p={p:.3f}")
 
@@ -113,7 +119,10 @@ if __name__ == "__main__":
     ap.add_argument("--concurrency", type=int, default=16)
     ap.add_argument("--base-url", default="http://localhost:8000/v1")
     ap.add_argument("--compare", nargs=2, metavar=("A", "B"))
+    ap.add_argument("--out-dir", help="where results are written/read (default results/raw)")
     a = ap.parse_args()
+    if a.out_dir:
+        globals()["OUT"] = Path(a.out_dir)
     if a.compare:
         compare(*a.compare)
     else:

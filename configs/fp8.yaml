@@ -1,0 +1,3 @@
+label: fp8
+expect_model: Qwen/Qwen2.5-7B-Instruct
+note: "server MUST be started with --quantization fp8 (same model name as bf16, so this cannot be auto-detected)"
