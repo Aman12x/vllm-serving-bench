@@ -1,23 +1,21 @@
 # vLLM serving benchmark: precision vs latency, throughput, cost and accuracy
 
-**On one NVIDIA L4, serving Qwen2.5-7B in 4-bit AWQ moved 1.8x more tokens per second than BF16 at
-64 concurrent requests, and FP8 cut p95 time to first token in half — neither at any measurable cost
-in accuracy (90.9% / 90.3% / 90.5% on the full GSM8K test set, paired p = 0.38 and 0.66).**
+On one NVIDIA L4, serving Qwen2.5-7B in 4-bit AWQ moved 1.8x more tokens per second than BF16 at 64
+concurrent requests, and FP8 cut p95 time to first token roughly in half, neither of them at any
+measurable cost in accuracy (90.9% / 90.3% / 90.5% on the full GSM8K test set, paired p = 0.38 and 0.66).
 
-No setup wins everywhere, so the right choice depends on the latency target:
-
-- **Chat, where the wait before the first word is what users feel** → FP8. At 64 concurrent requests its
-  p95 time to first token is **2.7 s**, against 5.6 s (BF16) and 5.9 s (AWQ).
-- **Batch work, where total tokens per hour is what matters** → AWQ, at **1,081 tokens/s** and
-  **$0.21 per 1M output tokens**.
-- **BF16 is dominated:** FP8 beats it on every metric at every load level measured.
+No setup wins everywhere, so the choice depends on the latency target. FP8 is the one to use for chat,
+where what users feel is the wait before the first word: at 64 concurrent requests its p95 time to first
+token is 2.7 s against 5.6 s for BF16 and 5.9 s for AWQ. AWQ is the one to use for batch work, where
+total tokens per hour is what matters, at 1,081 tokens/s and $0.21 per 1M output tokens. BF16 is
+dominated, since FP8 beats it on every metric at every load level measured here.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="analysis/figures/tradeoff-dark.png">
   <img alt="Throughput against p95 time to first token, one line per precision, points labelled by concurrency" src="analysis/figures/tradeoff-light.png">
 </picture>
 
-**Model:** Qwen2.5-7B-Instruct · **GPU:** NVIDIA L4 (23 GB, Colab) · **Server:** vLLM 0.29.0, PyTorch 2.13 / CUDA 13.0
+Model: Qwen2.5-7B-Instruct. GPU: NVIDIA L4 (23 GB, Colab). Server: vLLM 0.29.0, PyTorch 2.13 / CUDA 13.0.
 
 ## What is being compared
 
@@ -27,10 +25,10 @@ No setup wins everywhere, so the right choice depends on the latency target:
 | `fp8` | 8-bit float | 8-bit, on the L4's FP8 hardware | converted at load: `--quantization fp8` |
 | `awq` | 4-bit integer, group size 128 | 16-bit, converted on the fly | pre-quantized checkpoint `Qwen2.5-7B-Instruct-AWQ` |
 
-Generating tokens is limited by memory bandwidth: every step reads the whole model. Processing the prompt
-is limited by compute. That split explains the results below — AWQ reads a quarter of the bytes and so
-generates fastest, while only FP8 makes the arithmetic itself cheaper and so is the only one that improves
-time to first token.
+Generating tokens is limited by memory bandwidth, since every step reads the whole model, while
+processing the prompt is limited by compute. That split explains most of what follows: AWQ reads a
+quarter of the bytes and so generates fastest, and FP8 is the only one that makes the arithmetic itself
+cheaper, which is why it is the only one that improves time to first token.
 
 ### Throughput and latency
 
@@ -44,8 +42,8 @@ time to first token.
 | 32 | 386.9 | 668.8 | 862.8 | 3,014 ms | 1,942 ms | 3,287 ms |
 | 64 | 589.3 | 955.8 | 1,080.9 | 5,607 ms | 2,688 ms | 5,882 ms |
 
-AWQ's advantage over BF16 shrinks as load rises — 2.90x at one request, 1.83x at 64 — because the GPU
-moves from memory-limited to compute-limited, where 4-bit weights stop paying off.
+AWQ's advantage over BF16 shrinks as load rises, 2.90x at one request and 1.83x at 64, because the GPU
+moves from memory-limited to compute-limited and 4-bit weights stop paying off.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="analysis/figures/peruser-dark.png">
@@ -54,8 +52,8 @@ moves from memory-limited to compute-limited, where 4-bit weights stop paying of
 
 ### Cost per 1M output tokens
 
-Computed as GPU $/hour ÷ tokens per hour, at **$0.80 per L4-hour** (Modal's published per-second rate,
-$0.000222/s, read 19 Sep 2026). It is a published list price, not a bill.
+Computed as GPU $/hour divided by tokens per hour, at $0.80 per L4-hour, which is Modal's published
+per-second rate ($0.000222/s) read on 19 Sep 2026. It is a list price, not a bill.
 
 | Concurrent requests | BF16 | FP8 | AWQ |
 |---|---|---|---|
@@ -67,26 +65,27 @@ $0.000222/s, read 19 Sep 2026). It is a published list price, not a bill.
 
 ### Accuracy
 
-GSM8K, all 1,319 test questions, temperature 0, answers parsed and compared numerically. Every setup
-answered the same questions, so the comparison is paired and uses an exact McNemar test on the
-questions where two setups disagree.
+GSM8K, all 1,319 test questions, temperature 0, answers parsed out of the reply and compared as numbers.
+Every setup answered the same questions, so the comparison is paired and uses an exact McNemar test on
+the questions where two setups disagree.
 
 | Setup | Correct | Accuracy | 95% CI | vs BF16 |
 |---|---|---|---|---|
-| BF16 | 1199 / 1319 | 90.9% | 89.2–92.3% | — |
-| FP8 | 1191 / 1319 | 90.3% | 88.6–91.8% | 36 vs 28 discordant, p = 0.382 |
-| AWQ | 1194 / 1319 | 90.5% | 88.8–92.0% | 43 vs 38 discordant, p = 0.657 |
+| BF16 | 1199 / 1319 | 90.9% | 89.2 to 92.3% | |
+| FP8 | 1191 / 1319 | 90.3% | 88.6 to 91.8% | 36 vs 28 discordant, p = 0.382 |
+| AWQ | 1194 / 1319 | 90.5% | 88.8 to 92.0% | 43 vs 38 discordant, p = 0.657 |
 
-The same eval workload also finishes faster on the quantized servers: 1,259 s (BF16), 769 s (FP8), 467 s (AWQ).
+The same eval workload also finishes faster on the quantized servers: 1,259 s on BF16, 769 s on FP8 and
+467 s on AWQ.
 
 ## Limits
 
-- One GPU, one model, one prompt shape (512 in / 256 out). All three move the numbers.
-- 1,319 paired questions rule out accuracy gaps of roughly 2 points, not smaller ones. "No measurable
-  difference" is not "no difference".
-- GSM8K is arithmetic reasoning. A harder task may separate the setups where this one does not.
-- Colab gives no control over which physical L4 you get, and runs were taken across several sessions.
-- FP8 here is weight and activation quantization applied at load, not a calibrated offline checkpoint.
+One GPU, one model, one prompt shape (512 in / 256 out), and all three of those move the numbers. With
+1,319 paired questions the test can rule out accuracy gaps of roughly 2 points but not smaller ones, so
+"no measurable difference" is not the same as "no difference", and GSM8K is arithmetic reasoning, so a
+harder task may separate these setups where this one does not. Colab also gives no control over which
+physical L4 you get, and the runs here were taken across several sessions. The FP8 numbers are weight and
+activation quantization applied at load time, not a calibrated offline checkpoint.
 
 ## Reproduce
 
@@ -105,14 +104,14 @@ python eval/eval_acc.py --compare bf16_full fp8_full
 python analysis/report.py
 ```
 
-`bench/sweep.py` asks the server which model it is serving and refuses to run if it does not match the
-config, which is how a mislabelled run gets caught before it is saved.
+`bench/sweep.py` asks the server which model it is serving and refuses to run when that does not match
+the config, which is how a mislabelled run gets caught before it is saved.
 
 ## Layout
 
 ```
 bench/sweep.py          concurrency sweep driven by a config file
-eval/eval_acc.py        GSM8K accuracy + paired exact-McNemar comparison
+eval/eval_acc.py        GSM8K accuracy and paired exact-McNemar comparison
 configs/                one file per serving setup
 results/raw/            every run, committed, never edited by hand
 analysis/report.py      rebuilds all tables and figures from results/raw
