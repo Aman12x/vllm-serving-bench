@@ -17,7 +17,7 @@ dominated, since FP8 beats it on every metric at every load level measured here.
 
 Model: Qwen2.5-7B-Instruct. GPU: NVIDIA L4 (23 GB, Colab). Server: vLLM 0.29.0, PyTorch 2.13 / CUDA 13.0.
 
-## What is being compared
+## Comparisons
 
 | Label | Weights | Math runs at | How it is made |
 |---|---|---|---|
